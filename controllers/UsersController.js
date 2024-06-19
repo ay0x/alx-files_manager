@@ -1,34 +1,39 @@
-const crypto = require('crypto');
-const dbClient = require('../utils/db');
+import sha1 from 'sha1';
+import { ObjectID } from 'mongodb';
+import dbClient from '../utils/db';
+import redisClient from '../utils/redis';
 
 class UsersController {
-  static async postNew(req, res) {
-    const { email, password } = req.body;
+  static postNew(request, response) {
+    const { email } = request.body;
+    const { password } = request.body;
 
     if (!email) {
-      return res.status(400).json({ error: 'Missing email' });
+      response.status(400).json({ error: 'Missing email' });
+      return;
     }
-
     if (!password) {
-      return res.status(400).json({ error: 'Missing password' });
+      response.status(400).json({ error: 'Missing password' });
+      return;
     }
 
-    const usersCollection = dbClient.db.collection('users');
-    const existingUser = await usersCollection.findOne({ email });
-    if (existingUser) {
-      return res.status(400).json({ error: 'Already exist' });
-    }
-
-    const hashedPassword = crypto.createHash('sha1').update(password).digest('hex');
-
-    const newUser = {
-      email,
-      password: hashedPassword,
-    };
-
-    const result = await usersCollection.insertOne(newUser);
-
-    return res.status(201).json({ id: result.insertedId, email });
+    const users = dbClient.db.collection('users');
+    users.findOne({ email }, (err, user) => {
+      if (user) {
+        response.status(400).json({ error: 'Already exist' });
+      } else {
+        const hashedPassword = sha1(password);
+        users.insertOne(
+          {
+            email,
+            password: hashedPassword,
+          },
+        ).then((result) => {
+          response.status(201).json({ id: result.insertedId, email });
+          userQueue.add({ userId: result.insertedId });
+        }).catch((error) => console.log(error));
+      }
+    });
   }
 }
 
